@@ -1,4 +1,5 @@
-#![feature(llvm_asm, naked_functions)]
+#![feature(naked_functions)]
+use std::arch::asm;
 
 // In our simple example we set most constraints here.
 const DEFAULT_STACK_SIZE: usize = 1024 * 1024 * 2;
@@ -103,6 +104,7 @@ impl Runtime {
     /// If we find a thread that's ready to be run we change the state of the current thread from `Running` to `Ready`.
     /// Then we call switch which will save the current context (the old context) and load the new context
     /// into the CPU which then resumes based on the context it was just passed.
+     #[inline(never)]
     fn t_yield(&mut self) -> bool {
         let mut pos = self.current;
         while self.threads[pos].state != State::Ready {
@@ -125,7 +127,9 @@ impl Runtime {
         self.current = pos;
 
         unsafe {
-            switch(&mut self.threads[old_pos].ctx, &self.threads[pos].ctx);
+            let old: *mut ThreadContext = &mut self.threads[old_pos].ctx;
+            let new: *const ThreadContext = &self.threads[pos].ctx;
+            asm!("call switch", in("rdi") old, in("rsi") new, clobber_abi("C"));
         }
 
         // NOTE: this might look strange and it is. Normally we would just mark this as `unreachable!()` but our compiler
@@ -184,7 +188,9 @@ impl Runtime {
 /// This is an empty function which compiles to simply a `retq` instruction. `retq` will pop the next value off the
 /// stack and jump to the location. In our case that will be the `guard` function.
 #[naked]
-fn skip() { }
+unsafe extern "C" fn skip() {
+    asm!("ret", options(noreturn))
+}
 
 /// This is our guard function that we place on top of the stack. All this function does is set the
 /// state of our current thread and then `yield` which will then schedule a new thread to be run.
@@ -238,30 +244,24 @@ pub fn yield_thread() {
 ///
 /// see: https://github.com/rust-lang/rfcs/blob/master/text/1201-naked-fns.md
 #[naked]
-#[inline(never)]
-unsafe fn switch(old: *mut ThreadContext, new: *const ThreadContext) {
-    llvm_asm!("
-        mov     %rsp, 0x00($0)
-        mov     %r15, 0x08($0)
-        mov     %r14, 0x10($0)
-        mov     %r13, 0x18($0)
-        mov     %r12, 0x20($0)
-        mov     %rbx, 0x28($0)
-        mov     %rbp, 0x30($0)
-   
-        mov     0x00($1), %rsp
-        mov     0x08($1), %r15
-        mov     0x10($1), %r14
-        mov     0x18($1), %r13
-        mov     0x20($1), %r12
-        mov     0x28($1), %rbx
-        mov     0x30($1), %rbp
-        ret
-        "
-    :
-    :"r"(old), "r"(new)
-    :
-    : "volatile", "alignstack"
+#[no_mangle]
+unsafe extern "C" fn switch() {
+    asm!(
+        "mov [rdi + 0x00], rsp",
+        "mov [rdi + 0x08], r15",
+        "mov [rdi + 0x10], r14",
+        "mov [rdi + 0x18], r13",
+        "mov [rdi + 0x20], r12",
+        "mov [rdi + 0x28], rbx",
+        "mov [rdi + 0x30], rbp",
+        "mov rsp, [rsi + 0x00]",
+        "mov r15, [rsi + 0x08]",
+        "mov r14, [rsi + 0x10]",
+        "mov r13, [rsi + 0x18]",
+        "mov r12, [rsi + 0x20]",
+        "mov rbx, [rsi + 0x28]",
+        "mov rbp, [rsi + 0x30]",
+        "ret", options(noreturn)
     );
 }
 
