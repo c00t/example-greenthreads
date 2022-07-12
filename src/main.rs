@@ -109,7 +109,7 @@ impl Runtime {
         unsafe {
             let old: *mut ThreadContext = &mut self.threads[old_pos].ctx;
             let new: *const ThreadContext = &self.threads[pos].ctx;
-            asm!("call switch", in("rdi") old, in("rsi") new, clobber_abi("C"));
+            asm!("call _switch", in("rdi") old, in("rsi") new, clobber_abi("C"));
         }
         self.threads.len() > 0
     }
