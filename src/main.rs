@@ -253,13 +253,12 @@ impl Runtime {
         unsafe {
             let s_ptr = available.stack.as_mut_ptr().offset(size as isize);
             let s_ptr = (s_ptr as usize & !15) as *mut u8;
-            std::ptr::write(s_ptr.offset((size - 16) as isize) as *mut u64, guard as u64);
-            std::ptr::write(s_ptr.offset((size - 24) as isize) as *mut u64, skip as u64);
-            std::ptr::write(s_ptr.offset((size - 32) as isize) as *mut u64, f as u64);
-            available.ctx.rsp = s_ptr.offset((size - 32) as isize) as u64;
+            std::ptr::write(s_ptr.offset(-16) as *mut u64, guard as u64);
+            std::ptr::write(s_ptr.offset(-24) as *mut u64, skip as u64);
+            std::ptr::write(s_ptr.offset(-32) as *mut u64, f as u64);
+            available.ctx.rsp = s_ptr.offset(-32) as u64;
             available.ctx.stack_start = s_ptr as u64;
-
-            available.ctx.stack_end = s_ptr as *const u64 as u64;
+            available.ctx.stack_end = available.stack.as_ptr() as u64;
         }
 
 
